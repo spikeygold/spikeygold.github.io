@@ -1,108 +1,479 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Fapple Reels</title>
+  <style>
+    :root {
+      --bg: #000;
+      --fg: #fff;
+      --muted: rgba(255,255,255,.72);
+      --muted2: rgba(255,255,255,.5);
+      --accent: #ff2d55;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; margin: 0; background: var(--bg); color: var(--fg); font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; }
+    a { color: inherit; text-decoration: none; }
+
+    .app {
+      height: 100vh;
+      display: grid;
+      grid-template-rows: 56px 1fr 64px;
+      max-width: 520px;
+      margin: 0 auto;
+      position: relative;
+      background: #000;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      border-bottom: 1px solid rgba(255,255,255,.08);
+      background: linear-gradient(to bottom, rgba(0,0,0,.75), rgba(0,0,0,0));
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(8px);
+    }
+    .brand { display:flex; align-items:center; gap:10px; font-weight: 800; letter-spacing: .2px; }
+    .dot { width: 10px; height: 10px; border-radius: 999px; background: var(--accent); box-shadow: 0 0 18px rgba(255,45,85,.55); }
+    .tabs { display:flex; gap:10px; font-weight: 700; }
+    .tab { padding: 8px 10px; border-radius: 999px; color: var(--muted2); }
+    .tab.active { color: var(--fg); background: rgba(255,255,255,.08); }
+    .iconbtn {
+      width: 38px; height: 38px; border-radius: 999px;
+      display: grid; place-items: center;
+      background: rgba(255,255,255,.08);
+      border: 1px solid rgba(255,255,255,.08);
+      cursor: pointer;
+      color: #fff;
+      font-weight: 900;
+    }
+
+    .feed {
+      height: 100%;
+      overflow-y: auto;
+      scroll-snap-type: y mandatory;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    .card {
+      position: relative;
+      height: calc(100vh - 56px - 64px);
+      scroll-snap-align: start;
+      background: #000;
+      overflow: hidden;
+    }
+
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      background: #000;
+    }
+
+    .shade {
+      position: absolute; inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(to top, rgba(0,0,0,.75) 0%, rgba(0,0,0,0) 40%),
+        linear-gradient(to bottom, rgba(0,0,0,.55) 0%, rgba(0,0,0,0) 30%);
+    }
+
+    .meta {
+      position: absolute;
+      left: 14px;
+      bottom: 18px;
+      right: 86px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 10;
+    }
+    .userline { display:flex; align-items:center; gap:10px; }
+    .avatar {
+      width: 34px; height: 34px; border-radius: 999px;
+      background: radial-gradient(circle at 30% 30%, #fff, #555);
+      border: 2px solid rgba(255,255,255,.85);
+      flex: 0 0 auto;
+    }
+    .handle { font-weight: 800; }
+    .follow {
+      font-size: 12px; font-weight: 800;
+      padding: 6px 10px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,.22);
+      background: rgba(0,0,0,.25);
+    }
+    .caption { color: var(--fg); line-height: 1.25; font-size: 14px; }
+    .music {
+      display: inline-flex; align-items: center; gap: 8px;
+      width: fit-content;
+      padding: 7px 10px;
+      border-radius: 999px;
+      background: rgba(0,0,0,.35);
+      border: 1px solid rgba(255,255,255,.14);
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .music .note { opacity: .9; }
+
+    .rail {
+      position: absolute;
+      right: 10px;
+      bottom: 92px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      z-index: 10;
+      align-items: center;
+    }
+    .act {
+      display: grid;
+      gap: 6px;
+      place-items: center;
+      user-select: none;
+    }
+    .bubble {
+      width: 50px; height: 50px;
+      border-radius: 999px;
+      background: rgba(0,0,0,.35);
+      border: 1px solid rgba(255,255,255,.16);
+      display: grid; place-items: center;
+      font-size: 22px;
+      cursor: pointer;
+      transition: transform .08s ease;
+    }
+    .bubble:active { transform: scale(.94); }
+    .count { font-size: 12px; color: var(--muted); }
+    .liked { color: var(--accent); filter: drop-shadow(0 0 10px rgba(255,45,85,.35)); }
+
+    .tapHint {
+      position: absolute;
+      top: 72px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(0,0,0,.35);
+      border: 1px solid rgba(255,255,255,.14);
+      color: rgba(255,255,255,.85);
+      font-size: 12px;
+      z-index: 10;
+      backdrop-filter: blur(8px);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity .2s ease;
+    }
+    .tapHint.show { opacity: 1; }
+
+    .navbar {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      align-items: center;
+      padding: 10px 6px;
+      border-top: 1px solid rgba(255,255,255,.08);
+      background: rgba(0,0,0,.85);
+      backdrop-filter: blur(10px);
+      z-index: 20;
+    }
+    .navitem {
+      display: grid;
+      place-items: center;
+      gap: 4px;
+      color: rgba(255,255,255,.65);
+      font-size: 11px;
+      cursor: pointer;
+      user-select: none;
+    }
+    .navitem.active { color: #fff; }
+    .plus {
+      width: 46px; height: 32px;
+      border-radius: 10px;
+      background: #fff;
+      color: #000;
+      display: grid;
+      place-items: center;
+      font-weight: 900;
+      box-shadow: 0 8px 24px rgba(0,0,0,.55);
+    }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.55);
+      display: none;
+      place-items: center;
+      z-index: 999;
+      padding: 16px;
+    }
+    .modal.show { display: grid; }
+    .sheet {
+      width: 100%;
+      max-width: 520px;
+      border-radius: 18px;
+      background: rgba(20,20,20,.92);
+      border: 1px solid rgba(255,255,255,.12);
+      padding: 14px;
+      backdrop-filter: blur(12px);
+    }
+    .sheet h3 { margin: 0 0 8px; font-size: 16px; }
+    .sheet p { margin: 0 0 12px; color: var(--muted); font-size: 13px; line-height: 1.35; }
+    .row { display:flex; gap:10px; }
+    .btn {
+      flex: 1;
+      padding: 10px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,.14);
+      background: rgba(255,255,255,.08);
+      color: #fff;
+      font-weight: 800;
+      cursor: pointer;
+    }
+    .btn.primary { background: rgba(255,45,85,.18); border-color: rgba(255,45,85,.35); }
+
+    .errorBanner {
+      position: sticky;
+      top: 0;
+      z-index: 30;
+      padding: 10px 12px;
+      background: rgba(255,45,85,.20);
+      border-bottom: 1px solid rgba(255,45,85,.35);
+      color: #fff;
+      font-size: 13px;
+      display: none;
+    }
+    .errorBanner.show { display: block; }
+    code.inline { background: rgba(255,255,255,.08); padding: 2px 6px; border-radius: 6px; }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="brand"><span class="dot"></span>Fapple</div>
+      <div class="tabs">
+        <div class="tab">Following</div>
+        <div class="tab active">For You</div>
+      </div>
+      <button class="iconbtn" id="helpBtn" title="Help">?</button>
+    </div>
+
+    <div class="errorBanner" id="err"></div>
+
+    <div class="feed" id="feed"></div>
+
+    <div class="navbar">
+      <div class="navitem active">🏠<div>Home</div></div>
+      <div class="navitem">🔍<div>Search</div></div>
+      <div class="navitem"><div class="plus">＋</div><div>Post</div></div>
+      <div class="navitem">💬<div>Inbox</div></div>
+      <div class="navitem">👤<div>Profile</div></div>
+    </div>
+  </div>
+
+  <div class="modal" id="modal">
+    <div class="sheet">
+      <h3>Fapple Reels</h3>
+      <p>
+        • Feed loads from <code class="inline">https://media.fapple.org/feed.json</code><br>
+        • Scroll for next video (snap feed).<br>
+        • Tap video to play/pause (autoplays muted when allowed).<br>
+      </p>
+      <div class="row">
+        <button class="btn" id="closeModal">Close</button>
+        <button class="btn primary" id="copyLink">Copy site link</button>
+      </div>
+    </div>
+  </div>
+
 <script>
-const FEED_URL = "https://media.fapple.org/feed.json";
-const feed = document.getElementById("feed");
+(() => {
+  const FEED_URL = "https://media.fapple.org/feed.json";
 
-function escapeHtml(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
-  }[c]));
-}
+  const feedEl = document.getElementById("feed");
+  const errEl = document.getElementById("err");
+  const modal = document.getElementById("modal");
 
-function createCard(item){
-  const card = document.createElement("section");
-  card.className = "card";
+  function showError(msg) {
+    errEl.textContent = msg;
+    errEl.classList.add("show");
+  }
 
-  card.innerHTML = `
-    <video playsinline muted loop preload="metadata" src="${item.src}"></video>
+  function escapeHtml(s) {
+    return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+      "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+    }[c]));
+  }
 
-    <div class="meta">
-      <div>${escapeHtml(item.creator || "@fapple")}</div>
-      <div>${escapeHtml(item.caption || "")}</div>
-    </div>
+  function createCard(item) {
+    const src = item.src;
+    const creator = escapeHtml(item.creator || "@fapple");
+    const caption = escapeHtml(item.caption || "");
+    const music = escapeHtml(item.music || "Fapple • Demo");
+    const likes = escapeHtml(item.likes ?? "");
 
-    <div class="rail">
-      <div class="bubble likeBtn">♥</div>
-      <div class="bubble">💬</div>
-      <div class="bubble">↗</div>
-    </div>
+    const section = document.createElement("section");
+    section.className = "card";
+    section.innerHTML = `
+      <video playsinline muted loop preload="metadata" src="${src}"></video>
+      <div class="shade"></div>
 
-    <div class="tapHint show" style="opacity:1; top:72px;">Tap to start</div>
-  `;
+      <div class="tapHint show">Tap to play / pause • Scroll for next</div>
 
-  // If video fails to load, show it
-  const vid = card.querySelector("video");
-  vid.addEventListener("error", () => {
-    console.error("Video load error:", item.src, vid.error);
-  });
+      <div class="meta">
+        <div class="userline">
+          <div class="avatar"></div>
+          <div class="handle">${creator}</div>
+          <div class="follow">Follow</div>
+        </div>
+        <div class="caption">${caption}</div>
+        <div class="music"><span class="note">♪</span>${music}</div>
+      </div>
 
-  return card;
-}
+      <div class="rail">
+        <div class="act">
+          <div class="bubble likeBtn" aria-label="Like">♥</div>
+          <div class="count likeCount">${likes}</div>
+        </div>
+        <div class="act">
+          <div class="bubble commentBtn" aria-label="Comment">💬</div>
+          <div class="count"> </div>
+        </div>
+        <div class="act">
+          <div class="bubble shareBtn" aria-label="Share">↗</div>
+          <div class="count">Share</div>
+        </div>
+      </div>
+    `;
+    return section;
+  }
 
-async function loadFeed(){
-  const res = await fetch(FEED_URL, { cache:"no-store" });
-  if (!res.ok) throw new Error("feed fetch failed " + res.status);
-  const data = await res.json();
-  const items = Array.isArray(data.items) ? data.items : [];
+  async function loadFeed() {
+    const res = await fetch(FEED_URL, { cache: "no-store" });
+    if (!res.ok) throw new Error("Feed fetch failed: " + res.status);
+    const data = await res.json();
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (items.length === 0) {
+      showError("Feed loaded, but it has 0 items. Add videos + update feed.json on media.fapple.org.");
+    }
+    return items;
+  }
 
-  feed.innerHTML = "";
-  items.forEach(item => feed.appendChild(createCard(item)));
+  function wireUpBehavior() {
+    const cards = Array.from(document.querySelectorAll(".card"));
 
-  setupBehavior();
-}
+    // IntersectionObserver to try autoplay when visible
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach(async entry => {
+        const card = entry.target;
+        const vid = card.querySelector("video");
+        const hint = card.querySelector(".tapHint");
+        if (!vid) return;
 
-function setupBehavior(){
-  const cards = Array.from(document.querySelectorAll(".card"));
-
-  // Click/tap starts playback (required on some browsers)
-  cards.forEach(card => {
-    const vid = card.querySelector("video");
-    const hint = card.querySelector(".tapHint");
-
-    card.addEventListener("click", async (e) => {
-      if (e.target.closest(".rail")) return;
-      try {
-        if (vid.paused) {
-          await vid.play();
-          hint && (hint.style.opacity = "0");
+        if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+          try {
+            await vid.play();
+            hint?.classList.remove("show");
+          } catch {
+            // autoplay blocked -> keep hint visible
+            hint?.classList.add("show");
+          }
         } else {
           vid.pause();
-          hint && (hint.style.opacity = "1");
         }
-      } catch (err) {
-        console.error("play blocked:", err);
-        hint && (hint.textContent = "Tap again (play blocked)");
-        hint && (hint.style.opacity = "1");
-      }
-    });
-  });
+      });
+    }, { threshold: [0.6] });
 
-  // IntersectionObserver: try autoplay when visible, but don't rely on it
-  const io = new IntersectionObserver((entries) => {
-    entries.forEach(async entry => {
-      const card = entry.target;
+    cards.forEach(c => io.observe(c));
+
+    // Tap to play/pause
+    cards.forEach(card => {
       const vid = card.querySelector("video");
       const hint = card.querySelector(".tapHint");
-      if (!vid) return;
+      card.addEventListener("click", async (e) => {
+        if (e.target.closest(".rail") || e.target.closest(".topbar") || e.target.closest(".navbar")) return;
 
-      if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
         try {
-          await vid.play();
-          hint && (hint.style.opacity = "0");
-        } catch {
-          // Autoplay blocked is OK; user tap will start it.
-          hint && (hint.style.opacity = "1");
+          if (vid.paused) {
+            await vid.play();
+            hint?.classList.remove("show");
+          } else {
+            vid.pause();
+            hint?.classList.add("show");
+          }
+        } catch (err) {
+          console.error("Play blocked:", err);
+          hint.textContent = "Tap again (browser blocked autoplay)";
+          hint.classList.add("show");
         }
-      } else {
-        vid.pause();
-      }
+      });
     });
-  }, { threshold: [0.6] });
 
-  cards.forEach(c => io.observe(c));
-}
+    // Like / comment / share demo
+    document.querySelectorAll(".likeBtn").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        btn.classList.toggle("liked");
+        btn.style.transform = "scale(1.12)";
+        setTimeout(() => btn.style.transform = "", 90);
+      });
+    });
 
-loadFeed().catch(err => {
-  console.error(err);
-  alert("Feed loaded but UI error. Open DevTools Console.");
-});
+    document.querySelectorAll(".commentBtn").forEach(btn => {
+      btn.addEventListener("click", (e) => { e.stopPropagation(); alert("Comments (demo) — we’ll wire this to your backend later."); });
+    });
+
+    document.querySelectorAll(".shareBtn").forEach(btn => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        try { await navigator.clipboard.writeText(location.href); alert("Copied link!"); }
+        catch { alert("Copy failed — copy from the address bar."); }
+      });
+    });
+  }
+
+  async function boot() {
+    try {
+      const items = await loadFeed();
+
+      feedEl.innerHTML = "";
+      for (const item of items) {
+        if (!item?.src) continue;
+        feedEl.appendChild(createCard(item));
+      }
+
+      if (!feedEl.children.length) {
+        showError("Feed loaded, but no valid items had a 'src' URL.");
+        return;
+      }
+
+      wireUpBehavior();
+
+      // Try play first card on load (muted)
+      const first = feedEl.querySelector("video");
+      first?.play().catch(()=>{});
+    } catch (err) {
+      console.error(err);
+      showError("Feed failed. Check that media.fapple.org/feed.json loads and CORS is enabled.");
+    }
+  }
+
+  // Help modal
+  document.getElementById('helpBtn').addEventListener('click', () => modal.classList.add('show'));
+  document.getElementById('closeModal').addEventListener('click', () => modal.classList.remove('show'));
+  modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('show'); });
+  document.getElementById('copyLink').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(location.href); alert("Copied site link!"); }
+    catch { alert("Copy failed — copy from the address bar."); }
+  });
+
+  boot();
+})();
 </script>
+</body>
+</html>
