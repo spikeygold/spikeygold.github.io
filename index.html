@@ -1,111 +1,14 @@
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Fapple Reels</title>
-
-<style>
-:root {
-  --bg:#000;
-  --fg:#fff;
-  --muted:rgba(255,255,255,.72);
-  --muted2:rgba(255,255,255,.5);
-  --accent:#ff2d55;
-}
-html,body{
-  height:100%;
-  margin:0;
-  background:#000;
-  color:#fff;
-  font-family:system-ui;
-}
-.app{
-  height:100vh;
-  display:grid;
-  grid-template-rows:56px 1fr 64px;
-  max-width:520px;
-  margin:0 auto;
-}
-.topbar{
-  display:flex;
-  justify-content:space-between;
-  align-items:center;
-  padding:0 14px;
-}
-.feed{
-  overflow-y:auto;
-  scroll-snap-type:y mandatory;
-}
-.card{
-  height:calc(100vh - 120px);
-  position:relative;
-  scroll-snap-align:start;
-}
-video{
-  width:100%;
-  height:100%;
-  object-fit:cover;
-}
-.meta{
-  position:absolute;
-  bottom:20px;
-  left:14px;
-}
-.rail{
-  position:absolute;
-  right:10px;
-  bottom:100px;
-  display:flex;
-  flex-direction:column;
-  gap:14px;
-}
-.bubble{
-  background:rgba(0,0,0,.5);
-  border-radius:999px;
-  width:50px;
-  height:50px;
-  display:grid;
-  place-items:center;
-  cursor:pointer;
-}
-.navbar{
-  display:grid;
-  grid-template-columns:repeat(5,1fr);
-  text-align:center;
-}
-</style>
-</head>
-
-<body>
-
-<div class="app">
-
-<div class="topbar">
-  <div>Fapple</div>
-  <div>For You</div>
-</div>
-
-<div id="feed" class="feed"></div>
-
-<div class="navbar">
-  <div>🏠</div>
-  <div>🔍</div>
-  <div>＋</div>
-  <div>💬</div>
-  <div>👤</div>
-</div>
-
-</div>
-
 <script>
-
 const FEED_URL = "https://media.fapple.org/feed.json";
-
 const feed = document.getElementById("feed");
 
-function createCard(item){
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
 
+function createCard(item){
   const card = document.createElement("section");
   card.className = "card";
 
@@ -113,8 +16,8 @@ function createCard(item){
     <video playsinline muted loop preload="metadata" src="${item.src}"></video>
 
     <div class="meta">
-      <div>${item.creator || "@fapple"}</div>
-      <div>${item.caption || ""}</div>
+      <div>${escapeHtml(item.creator || "@fapple")}</div>
+      <div>${escapeHtml(item.caption || "")}</div>
     </div>
 
     <div class="rail">
@@ -122,49 +25,84 @@ function createCard(item){
       <div class="bubble">💬</div>
       <div class="bubble">↗</div>
     </div>
+
+    <div class="tapHint show" style="opacity:1; top:72px;">Tap to start</div>
   `;
+
+  // If video fails to load, show it
+  const vid = card.querySelector("video");
+  vid.addEventListener("error", () => {
+    console.error("Video load error:", item.src, vid.error);
+  });
 
   return card;
 }
 
 async function loadFeed(){
-
-  const res = await fetch(FEED_URL,{cache:"no-store"});
+  const res = await fetch(FEED_URL, { cache:"no-store" });
+  if (!res.ok) throw new Error("feed fetch failed " + res.status);
   const data = await res.json();
+  const items = Array.isArray(data.items) ? data.items : [];
 
   feed.innerHTML = "";
-
-  data.items.forEach(item=>{
-    feed.appendChild(createCard(item));
-  });
+  items.forEach(item => feed.appendChild(createCard(item)));
 
   setupBehavior();
 }
 
 function setupBehavior(){
+  const cards = Array.from(document.querySelectorAll(".card"));
 
-  const cards = document.querySelectorAll(".card");
+  // Click/tap starts playback (required on some browsers)
+  cards.forEach(card => {
+    const vid = card.querySelector("video");
+    const hint = card.querySelector(".tapHint");
 
-  const io = new IntersectionObserver(entries=>{
-    entries.forEach(entry=>{
-      const vid = entry.target.querySelector("video");
-      if(!vid) return;
+    card.addEventListener("click", async (e) => {
+      if (e.target.closest(".rail")) return;
+      try {
+        if (vid.paused) {
+          await vid.play();
+          hint && (hint.style.opacity = "0");
+        } else {
+          vid.pause();
+          hint && (hint.style.opacity = "1");
+        }
+      } catch (err) {
+        console.error("play blocked:", err);
+        hint && (hint.textContent = "Tap again (play blocked)");
+        hint && (hint.style.opacity = "1");
+      }
+    });
+  });
 
-      if(entry.isIntersecting){
-        vid.play().catch(()=>{});
-      }else{
+  // IntersectionObserver: try autoplay when visible, but don't rely on it
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(async entry => {
+      const card = entry.target;
+      const vid = card.querySelector("video");
+      const hint = card.querySelector(".tapHint");
+      if (!vid) return;
+
+      if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+        try {
+          await vid.play();
+          hint && (hint.style.opacity = "0");
+        } catch {
+          // Autoplay blocked is OK; user tap will start it.
+          hint && (hint.style.opacity = "1");
+        }
+      } else {
         vid.pause();
       }
     });
-  },{threshold:.6});
+  }, { threshold: [0.6] });
 
-  cards.forEach(c=>io.observe(c));
-
+  cards.forEach(c => io.observe(c));
 }
 
-loadFeed();
-
+loadFeed().catch(err => {
+  console.error(err);
+  alert("Feed loaded but UI error. Open DevTools Console.");
+});
 </script>
-
-</body>
-</html>
