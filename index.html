@@ -294,14 +294,24 @@
 <script>
 (() => {
   const FEED_URL = "https://media.fapple.org/feed.json";
+  const POLL_MS = 15000; // auto-refresh feed every 15s
 
   const feedEl = document.getElementById("feed");
   const errEl = document.getElementById("err");
   const modal = document.getElementById("modal");
 
+  let currentIndex = 0;
+  let lastGeneratedAt = 0;
+  let isSnapping = false;
+  let wheelLockUntil = 0;
+
   function showError(msg) {
     errEl.textContent = msg;
     errEl.classList.add("show");
+  }
+  function clearError() {
+    errEl.textContent = "";
+    errEl.classList.remove("show");
   }
 
   function escapeHtml(s) {
@@ -342,7 +352,7 @@
         </div>
         <div class="act">
           <div class="bubble commentBtn" aria-label="Comment">💬</div>
-          <div class="count"> </div>
+          <div class="count"></div>
         </div>
         <div class="act">
           <div class="bubble shareBtn" aria-label="Share">↗</div>
@@ -353,21 +363,50 @@
     return section;
   }
 
-  async function loadFeed() {
-    const res = await fetch(FEED_URL, { cache: "no-store" });
+  async function fetchFeedJson() {
+    // cache-bust to avoid stale feed.json
+    const url = `${FEED_URL}?t=${Date.now()}`;
+    const res = await fetch(url, { cache: "no-store" });
     if (!res.ok) throw new Error("Feed fetch failed: " + res.status);
-    const data = await res.json();
-    const items = Array.isArray(data.items) ? data.items : [];
-    if (items.length === 0) {
-      showError("Feed loaded, but it has 0 items. Add videos + update feed.json on media.fapple.org.");
+    return await res.json();
+  }
+
+  function getCards() {
+    return Array.from(document.querySelectorAll(".card"));
+  }
+
+  function clamp(n, a, b) { return Math.max(a, Math.min(b, n)); }
+
+  function scrollToIndex(idx) {
+    const cards = getCards();
+    if (!cards.length) return;
+
+    currentIndex = clamp(idx, 0, cards.length - 1);
+
+    isSnapping = true;
+    cards[currentIndex].scrollIntoView({ behavior: "smooth", block: "start" });
+
+    // unlock after animation-ish
+    setTimeout(() => { isSnapping = false; }, 350);
+
+    // preload next
+    preloadNeighbor();
+  }
+
+  function preloadNeighbor() {
+    const cards = getCards();
+    const next = cards[currentIndex + 1]?.querySelector("video");
+    if (next) {
+      // Encourage browser to fetch metadata and start buffering
+      next.preload = "auto";
+      next.load();
     }
-    return items;
   }
 
   function wireUpBehavior() {
-    const cards = Array.from(document.querySelectorAll(".card"));
+    const cards = getCards();
 
-    // IntersectionObserver to try autoplay when visible
+    // Autoplay visible
     const io = new IntersectionObserver((entries) => {
       entries.forEach(async entry => {
         const card = entry.target;
@@ -376,13 +415,17 @@
         if (!vid) return;
 
         if (entry.isIntersecting && entry.intersectionRatio >= 0.6) {
+          // update currentIndex based on which card is active
+          const idx = cards.indexOf(card);
+          if (idx !== -1) currentIndex = idx;
+
           try {
             await vid.play();
             hint?.classList.remove("show");
           } catch {
-            // autoplay blocked -> keep hint visible
             hint?.classList.add("show");
           }
+          preloadNeighbor();
         } else {
           vid.pause();
         }
@@ -391,30 +434,23 @@
 
     cards.forEach(c => io.observe(c));
 
-    // Tap to play/pause
+    // Tap play/pause
     cards.forEach(card => {
       const vid = card.querySelector("video");
       const hint = card.querySelector(".tapHint");
       card.addEventListener("click", async (e) => {
         if (e.target.closest(".rail") || e.target.closest(".topbar") || e.target.closest(".navbar")) return;
-
         try {
-          if (vid.paused) {
-            await vid.play();
-            hint?.classList.remove("show");
-          } else {
-            vid.pause();
-            hint?.classList.add("show");
-          }
-        } catch (err) {
-          console.error("Play blocked:", err);
+          if (vid.paused) { await vid.play(); hint?.classList.remove("show"); }
+          else { vid.pause(); hint?.classList.add("show"); }
+        } catch {
           hint.textContent = "Tap again (browser blocked autoplay)";
           hint.classList.add("show");
         }
       });
     });
 
-    // Like / comment / share demo
+    // Like / comment / share
     document.querySelectorAll(".likeBtn").forEach(btn => {
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -423,43 +459,84 @@
         setTimeout(() => btn.style.transform = "", 90);
       });
     });
-
     document.querySelectorAll(".commentBtn").forEach(btn => {
-      btn.addEventListener("click", (e) => { e.stopPropagation(); alert("Comments (demo) — we’ll wire this to your backend later."); });
+      btn.addEventListener("click", (e) => { e.stopPropagation(); alert("Comments (demo)"); });
     });
-
     document.querySelectorAll(".shareBtn").forEach(btn => {
       btn.addEventListener("click", async (e) => {
         e.stopPropagation();
         try { await navigator.clipboard.writeText(location.href); alert("Copied link!"); }
-        catch { alert("Copy failed — copy from the address bar."); }
+        catch { alert("Copy failed — copy from address bar."); }
       });
     });
+
+    // Wheel “one card at a time” snap (TikTok-ish)
+    feedEl.addEventListener("wheel", (e) => {
+      const now = Date.now();
+      if (now < wheelLockUntil || isSnapping) return;
+
+      // If user is doing tiny trackpad movement, ignore
+      if (Math.abs(e.deltaY) < 12) return;
+
+      e.preventDefault();
+      wheelLockUntil = now + 450;
+
+      if (e.deltaY > 0) scrollToIndex(currentIndex + 1);
+      else scrollToIndex(currentIndex - 1);
+    }, { passive: false });
+
+    // Keyboard nav
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown") { e.preventDefault(); scrollToIndex(currentIndex + 1); }
+      if (e.key === "ArrowUp") { e.preventDefault(); scrollToIndex(currentIndex - 1); }
+    });
+
+    // Ensure first video tries to play
+    const firstVid = cards[0]?.querySelector("video");
+    firstVid?.play().catch(()=>{});
+  }
+
+  async function renderFromFeed(data) {
+    const items = Array.isArray(data.items) ? data.items : [];
+    if (!items.length) {
+      showError("Feed loaded but has 0 items. Drop MP4s into NAS clips folder.");
+      feedEl.innerHTML = "";
+      return;
+    }
+
+    clearError();
+    feedEl.innerHTML = "";
+    for (const item of items) {
+      if (item?.src) feedEl.appendChild(createCard(item));
+    }
+    currentIndex = 0;
+    wireUpBehavior();
   }
 
   async function boot() {
     try {
-      const items = await loadFeed();
-
-      feedEl.innerHTML = "";
-      for (const item of items) {
-        if (!item?.src) continue;
-        feedEl.appendChild(createCard(item));
-      }
-
-      if (!feedEl.children.length) {
-        showError("Feed loaded, but no valid items had a 'src' URL.");
-        return;
-      }
-
-      wireUpBehavior();
-
-      // Try play first card on load (muted)
-      const first = feedEl.querySelector("video");
-      first?.play().catch(()=>{});
+      const data = await fetchFeedJson();
+      lastGeneratedAt = data.generated_at || 0;
+      await renderFromFeed(data);
     } catch (err) {
       console.error(err);
-      showError("Feed failed. Check that media.fapple.org/feed.json loads and CORS is enabled.");
+      showError("Feed failed. Make sure https://media.fapple.org/feed.json opens.");
+    }
+  }
+
+  async function pollFeed() {
+    try {
+      const data = await fetchFeedJson();
+      const gen = data.generated_at || 0;
+      if (gen && gen !== lastGeneratedAt) {
+        lastGeneratedAt = gen;
+        const oldScroll = feedEl.scrollTop;
+        await renderFromFeed(data);
+        // keep you near top; simple MVP behavior
+        feedEl.scrollTop = oldScroll;
+      }
+    } catch {
+      // ignore transient issues
     }
   }
 
@@ -473,6 +550,7 @@
   });
 
   boot();
+  setInterval(pollFeed, POLL_MS);
 })();
 </script>
 </body>
